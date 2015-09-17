@@ -1,0 +1,13 @@
+{
+  "name": "clabot",
+  "version": "0.0.1",
+  "description": "Bot for handling CLA verification for GitHub PR requests",
+  "repository": "https://github.com/brett19/clabot",
+  "dependencies": {
+    "body-parser": "~1.14.0",
+    "express": "~4.13.3",
+    "node-yaml-config": "0.0.3",
+    "request": "~2.62.0",
+    "wobot": "~0.8.1"
+  }
+}
