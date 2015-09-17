@@ -215,31 +215,7 @@ var b = new wobot.Bot({
 
 b.connect();
 
-b.onConnect(function() {
-  console.log(' -=- > Connect');
-
-  for (var i = 0; i < config.hipchat.channels.length; ++i) {
-    console.log(' -=- Joining ' + config.hipchat.channels[i]);
-    this.join(config.hipchat.channels[i], 0);
-  }
-});
-
-b.onInvite(function(roomJid, fromJid, reason) {
-  console.log(' -=- > Invite to ' + roomJid + ' by ' + fromJid + ': ' + reason);
-  this.join(roomJid);
-});
-
-b.onDisconnect(function() {
-  console.log(' -=- > Disconnect');
-});
-
-b.onError(function(error, text, stanza) {
-  console.log(' -=- > Error: ' + error + ' (' + text + ')');
-});
-
-b.onMessage(function(channel, from, message) {
-  console.log(' -=- > ' + from + '@' + channel + ' said: ' + message);
-
+function b_handle_message(channel, message) {
   var verify_match = message.match(/verify ([^ ]*)github.com\/([^ ]*)/);
   if (verify_match) {
     var gh_uri = verify_match[0].substr(7);
@@ -271,6 +247,36 @@ b.onMessage(function(channel, from, message) {
       b.message(channel, msgout);
     });
   }
+}
+
+b.onConnect(function() {
+  console.log(' -=- > Connect');
+
+  for (var i = 0; i < config.hipchat.channels.length; ++i) {
+    console.log(' -=- Joining ' + config.hipchat.channels[i]);
+    this.join(config.hipchat.channels[i], 0);
+  }
+});
+
+b.onInvite(function(roomJid, fromJid, reason) {
+  console.log(' -=- > Invite to ' + roomJid + ' by ' + fromJid + ': ' + reason);
+  //this.join(roomJid);
+
+  b_handle_message(roomJid.toString(), reason);
+});
+
+b.onDisconnect(function() {
+  console.log(' -=- > Disconnect');
+});
+
+b.onError(function(error, text, stanza) {
+  console.log(' -=- > Error: ' + error + ' (' + text + ')');
+});
+
+b.onMessage(function(channel, from, message) {
+  console.log(' -=- > ' + from + '@' + channel + ' said: ' + message);
+
+  b_handle_message(channel, message);
 });
 
 b.onPrivateMessage(function(jid, message) {
