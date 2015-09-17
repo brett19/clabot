@@ -262,7 +262,7 @@ b.onConnect(function() {
 
 b.onInvite(function(roomJid, fromJid, reason) {
   console.log(' -=- > Invite to ' + roomJid + ' by ' + fromJid + ': ' + reason);
-  //this.join(roomJid);
+  this.join(roomJid);
 
   b_handle_message(roomJid.toString(), reason);
 });
