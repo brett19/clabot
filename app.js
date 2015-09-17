@@ -252,9 +252,11 @@ function b_handle_message(channel, message) {
 b.onConnect(function() {
   console.log(' -=- > Connect');
 
-  for (var i = 0; i < config.hipchat.channels.length; ++i) {
-    console.log(' -=- Joining ' + config.hipchat.channels[i]);
-    this.join(config.hipchat.channels[i], 0);
+  if (config.hipchat.channels) {
+    for (var i = 0; i < config.hipchat.channels.length; ++i) {
+      console.log(' -=- Joining ' + config.hipchat.channels[i]);
+      this.join(config.hipchat.channels[i], 0);
+    }
   }
 });
 
