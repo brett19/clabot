@@ -5,6 +5,7 @@
   "repository": "https://github.com/brett19/clabot",
   "dependencies": {
     "body-parser": "~1.14.0",
+    "ejs": "~2.3.4",
     "express": "~4.13.3",
     "node-yaml-config": "0.0.3",
     "request": "~2.62.0",

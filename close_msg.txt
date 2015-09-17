@@ -1,1 +1,0 @@
-Unfortunately Couchbase utilizes an external Code Review system (Gerrit) for accepting changes and we are unable to directly accept pull-requests.  Please register on Gerrit, accept our CLA and push your change there.

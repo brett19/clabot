@@ -1,0 +1,12 @@
+Thanks for the pull request!!  To ensure quality review, Couchbase has a [code review system deployed based on Gerrit](http://review.couchbase.org/)* to manage the workflow of changes.  It also handles contributor agreements.  To get this change in and collaborate in code review, please register on Gerrit, accept our CLA and push your change there.  More detailed instructions are available here: http://www.couchbase.com/wiki/display/couchbase/Contributing+Changes.
+
+<% if (state == 'signed') { -%>
+P.S. Our bot tells us you've registered and signed the CLA on Gerrit, so you just need to push the commits there.
+<% } else if (state == 'registered') { -%>
+P.S. Our bot tells us you've registered on Gerrit but have not accepted the CLA. Almost there!
+<% } else if (state == 'unregistered') { -%>
+P.S. Our bot tells us you've are currently unregistered on Gerrit.
+<% } else { -%>
+<% } -%>
+
+* [Gerrit](https://www.gerritcodereview.com/) is an open source Git code review system from the Google Android project

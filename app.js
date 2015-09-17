@@ -5,8 +5,10 @@ var yaml_config = require('node-yaml-config');
 var wobot = require('wobot');
 var express = require('express');
 var bodyParser = require('body-parser')
+var ejs = require('ejs');
 
 var config = yaml_config.load(__dirname + '/config.yaml');
+var ghprTpl = ejs.compile(fs.readFileSync(__dirname + '/close_msg.ejs', 'utf8'));
 
 function github_request(options, callback) {
   if (!options) {
@@ -329,14 +331,14 @@ app.all('/handle', jsonParser, function (req, res) {
           }
 
           var msgbody = '';
-          msgbody += fs.readFileSync(__dirname + '/close_msg.txt');
-
           if (user_state == 0) {
-            msgbody += '\n\nP.S. As far as I can tell, you are currently unregistered on Gerrit.';
+            msgbody += ghprTpl({state: 'unregistered'});
           } else if (user_state == 1) {
-            msgbody += '\n\nP.S. As far as I can tell, you are registered on Gerrit but have not accepted the CLA.';
+            msgbody += ghprTpl({state: 'registered'});
           } else if (user_state == 2) {
-            msgbody += '\n\nP.S. As far as I can tell, you are registered and have signed the CLA on Gerrit, you just need to push the commits there!';
+            msgbody += ghprTpl({state: 'signed'});
+          } else {
+            msgbody += ghprTpl({state: 'unknown'});
           }
 
           github_request({
