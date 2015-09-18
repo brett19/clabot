@@ -271,10 +271,14 @@ b.onInvite(function(roomJid, fromJid, reason) {
 
 b.onDisconnect(function() {
   console.log(' -=- > Disconnect');
+
+  b.connect();
 });
 
 b.onError(function(error, text, stanza) {
   console.log(' -=- > Error: ' + error + ' (' + text + ')');
+
+  b.connect();
 });
 
 b.onMessage(function(channel, from, message) {
