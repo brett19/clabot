@@ -266,7 +266,9 @@ b.onInvite(function(roomJid, fromJid, reason) {
   console.log(' -=- > Invite to ' + roomJid + ' by ' + fromJid + ': ' + reason);
   this.join(roomJid);
 
-  b_handle_message(roomJid.toString(), reason);
+  if (reason) {
+    b_handle_message(roomJid.toString(), reason);
+  }
 });
 
 b.onDisconnect(function() {
