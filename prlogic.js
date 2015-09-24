@@ -18,6 +18,8 @@ var noclaTpl = ejsCompile('no_cla.ejs');
 var tooManyCommitsTpl = ejsCompile('too_many_commits.ejs');
 var changeCreatedTpl = ejsCompile('change_created.ejs');
 var changePushedTpl = ejsCompile('change_pushed.ejs');
+var closedTpl = ejsCompile('change_closed.ejs');
+var timeoutTpl = ejsCompile('timeout.ejs');
 
 function setupRepoDir(callback) {
   rimraf('repos', function(err) {
@@ -108,13 +110,14 @@ function getBotPrChangeId(changeId, callback) {
     var info = null;
     for (var j = 0; j < change.messages.length; ++j) {
       var msg = change.messages[j].message;
-      if (msg.indexOf(GERRIT_PR_BOT_TAG + '\n') !== -1) {
+      if (msg.indexOf(GERRIT_PR_BOT_TAG) !== -1) {
         var ghUriMatch = msg.match(/github.com\/([^\/]*)\/([^\/]*)\/pull\/([0-9]*)/);
         if (ghUriMatch) {
           info = {
             user: ghUriMatch[1],
             repo: ghUriMatch[2],
-            number: parseInt(ghUriMatch[3])
+            number: parseInt(ghUriMatch[3]),
+            status: change.status
           };
         }
       }
@@ -126,11 +129,13 @@ function getBotPrChangeId(changeId, callback) {
 
 function findPrChangeId(opts, callback) {
   var ghUri = 'github.com/' + opts.user + '/' + opts.repo + '/pull/' + opts.number;
+  console.log('searching pr by', opts.project, ghUri);
   gerrit.queryChanges('project:' + opts.project + ' ' + ghUri, function(err, changes) {
     if (err) return callback(err);
 
     var remain = changes.length;
     var changeIds = [];
+    var openChangeIds = [];
     if (remain === 0) {
       return callback(null, null);
     }
@@ -145,21 +150,32 @@ function findPrChangeId(opts, callback) {
             return callback(new Error('could not load pr search changesets'));
           }
 
+          console.log('checking', changeId, info);
+
           if (info &&
               info.user == opts.user &&
               info.repo == opts.repo &&
               info.number == opts.number) {
             changeIds.push(changeId);
+
+            if (info.status !== 'ABANDONED') {
+              openChangeIds.push(changeId);
+            }
           }
 
           remain--;
           if (remain == 0) {
+            console.log('found', changeIds, openChangeIds);
             if (changeIds.length == 0) {
               return callback(null, null);
-            } else if (changeIds.length == 1) {
-              return callback(null, changeIds[0]);
-            } else {
-              return callback(new Error('found more than one changeset'));
+            } else if (changeIds.length > 0) {
+              if (openChangeIds.length === 0) {
+                return callback(new Error('all_changes_closed'));
+              } else if (openChangeIds.length === 1) {
+                return callback(null, openChangeIds[0]);
+              } else {
+                return callback(new Error('too_many_changes'));
+              }
             }
           }
         });
@@ -370,21 +386,6 @@ function buildChangesetFromPr(opts, callback) {
 
                   callback(null, 'updated', changeId);
                 });
-                /*
-                console.log('maybe tagging pull request');
-                maybeTagPullRequest({
-                  project: project,
-                  user: opts.user,
-                  repo: opts.repo,
-                  number: opts.number,
-                  changeId: changeId
-                }, function(err) {
-                  if (err) return callback(err);
-                  console.log('done');
-
-                  callback();
-                });
-                */
               });
             });
           });
@@ -433,12 +434,12 @@ function getPrAuthorClaStatuses(opts, callback) {
         authors_map[author.email] = {
           name: author.name,
           email: author.email,
-          commits: 0,
+          commits: [],
           status: 'unknown'
         };
       }
 
-      authors_map[author.email].commits++;
+      authors_map[author.email].commits.push(commits[i].sha);
     }
 
     var authors = [];
@@ -476,6 +477,8 @@ var GH_STATUS = {
   NO_GERRIT_CLA: 2,
   GERRIT_CREATED: 3,
   GERRIT_PUSHED: 4,
+  GERRIT_CLOSED: 5,
+  TIMEOUT: 6,
   NO_CHANGES: 100
 };
 
@@ -485,7 +488,11 @@ var GH_STATUS_TAGS = {
   'too_many_commits': GH_STATUS.TOO_MANY_COMMITS,
   'no_cla': GH_STATUS.NO_GERRIT_CLA,
   'created': GH_STATUS.GERRIT_CREATED,
-  'pushed': GH_STATUS.GERRIT_PUSHED
+  'pushed': GH_STATUS.GERRIT_PUSHED,
+  'closed': GH_STATUS.GERRIT_CLOSED,
+  'timeout': GH_STATUS.TIMEOUT,
+
+  'no_changes': GH_STATUS.NO_CHANGES
 };
 function getGhStatusTag(code) {
   for (var i in GH_STATUS_TAGS) {
@@ -510,6 +517,11 @@ function maybeTagPullRequest(opts, callback) {
   if (opts.newStatus === GH_STATUS.NO_CHANGES) {
     return callback(null, GH_STATUS.NO_CHANGES);
   }
+
+  if (opts.newStatus === GH_STATUS.GERRIT_CREATED || opts.newStatus === GH_STATUS.GERRIT_PUSHED) {
+    return tagPrPushed(opts, callback);
+  }
+
   if (opts.oldStatus === opts.newStatus) {
     return callback(null, GH_STATUS.NO_CHANGES);
   }
@@ -522,8 +534,12 @@ function maybeTagPullRequest(opts, callback) {
     return tagPrNoCla(opts, callback);
   }
 
-  if (opts.newStatus === GH_STATUS.GERRIT_CREATED || opts.newStatus === GH_STATUS.GERRIT_PUSHED) {
-    return tagPrPushed(opts, callback);
+  if (opts.newStatus === GH_STATUS.GERRIT_CLOSED && opts.oldStatus < opts.newStatus) {
+    return tagPrClosed(opts, callback);
+  }
+
+  if (opts.newStatus === GH_STATUS.TIMEOUT && opts.oldStatus < opts.newStatus) {
+    return tagPrTimeout(opts, callback);
   }
 
   console.error('unexpected pull request state change', opts.oldStatus, opts.newStatus);
@@ -567,14 +583,26 @@ function tagPrPushed(opts, callback) {
     var csUri = 'http://review.couchbase.org/#/c/' + change._number;
     if (opts.newStatus === GH_STATUS.GERRIT_CREATED) {
       tagPr(opts, changeCreatedTpl, {
-        csUri: csUri
+        csUri: csUri,
+        commitSha: opts.commitSha
       }, callback);
     } else {
       tagPr(opts, changePushedTpl, {
-        csUri: csUri
+        csUri: csUri,
+        commitSha: opts.commitSha
       }, callback);
     }
   });
+}
+function tagPrClosed(opts, callback) {
+  tagPr(opts, closedTpl, {
+
+  }, callback);
+}
+function tagPrTimeout(opts, callback) {
+  tagPr(opts, timeoutTpl, {
+
+  }, callback);
 }
 
 /*
@@ -589,83 +617,158 @@ function lookAt(opts, callback) {
     return callback(new Error('no_project'));
   }
 
-  getChangeNumFromPr({
+  github.pullRequests.get({
     user: opts.user,
     repo: opts.repo,
     number: opts.number
-  }, function(err, info) {
+  }, function(err, pr) {
     if (err) return callback(err);
-    var oldStatusId = 0;
-    if (info) {
-      oldStatusId = info.status;
-    }
 
-    getPrAuthorClaStatuses({
+    var prCreatedDate = new Date(pr.created_at);
+
+    getChangeNumFromPr({
       user: opts.user,
       repo: opts.repo,
       number: opts.number
-    }, function(err, authors) {
+    }, function (err, info) {
       if (err) return callback(err);
-
-      if (authors.length != 1 || authors[0].commits != 1) {
-        // Can only have a single commit
-        return maybeTagPullRequest({
-          project: project,
-          user: opts.user,
-          repo: opts.repo,
-          number: opts.number,
-          oldStatus: oldStatusId,
-          newStatus: GH_STATUS.TOO_MANY_COMMITS
-        }, callback);
+      var oldStatusId = 0;
+      if (info) {
+        oldStatusId = info.status;
       }
 
-      if (authors[0].status !== 'signed') {
-        // Must register on gerrit
-        return maybeTagPullRequest({
-          project: project,
-          user: opts.user,
-          repo: opts.repo,
-          number: opts.number,
-          oldStatus: oldStatusId,
-          newStatus: GH_STATUS.NO_GERRIT_CLA
-        }, callback);
-      }
-
-      buildChangesetFromPr({
+      getPrAuthorClaStatuses({
         user: opts.user,
         repo: opts.repo,
         number: opts.number
-      }, function(err, state, changeId) {
+      }, function (err, authors) {
         if (err) return callback(err);
 
-        var newStatus = GH_STATUS.GERRIT_PUSHED;
-        if (state === 'new') {
-          newStatus = GH_STATUS.GERRIT_CREATED;
+        var closeStatus = -1;
+        if (authors.length != 1 || authors[0].commits.length != 1) {
+          // Can only have a single commit
+          closeStatus = GH_STATUS.TOO_MANY_COMMITS;
+        }
+        if (authors[0].status !== 'signed') {
+          // Must register on gerrit
+          closeStatus = GH_STATUS.NO_GERRIT_CLA;
         }
 
-        return maybeTagPullRequest({
-          project: project,
+        if (closeStatus !== -1) {
+          var curDate = new Date();
+          if (curDate.getTime() - prCreatedDate.getTime() >= 7*24*60*60*1000) {
+            closeStatus = GH_STATUS.TIMEOUT;
+          }
+
+          return maybeTagPullRequest({
+            project: project,
+            user: opts.user,
+            repo: opts.repo,
+            number: opts.number,
+            oldStatus: oldStatusId,
+            newStatus: closeStatus
+          }, function(err, tagResult) {
+            if (err) return callback(err);
+
+            if (closeStatus !== GH_STATUS.TIMEOUT) {
+              return callback(null, tagResult);
+            }
+
+            github.issues.edit({
+              user: opts.user,
+              repo: opts.repo,
+              number: opts.number,
+              state: 'closed'
+            }, function (err) {
+              if (err) return callback(err);
+
+              callback(null, tagResult);
+            });
+          });
+        }
+
+        buildChangesetFromPr({
           user: opts.user,
           repo: opts.repo,
-          number: opts.number,
-          changeId: changeId,
-          oldStatus: oldStatusId,
-          newStatus: newStatus
-        }, callback);
+          number: opts.number
+        }, function (err, state, changeId) {
+          if (err && err.message.match(/all_changes_closed/)) {
+            return maybeTagPullRequest({
+              project: project,
+              user: opts.user,
+              repo: opts.repo,
+              number: opts.number,
+              changeId: changeId,
+              commitSha: authors[0].commits[0],
+              oldStatus: oldStatusId,
+              newStatus: GH_STATUS.GERRIT_CLOSED
+            }, function (err, tagResult) {
+              if (err) return callback(err);
+
+              github.issues.edit({
+                user: opts.user,
+                repo: opts.repo,
+                number: opts.number,
+                state: 'closed'
+              }, function (err) {
+                if (err) return callback(err);
+
+                callback(null, tagResult);
+              });
+
+            });
+          }
+          if (err) return callback(err);
+
+          var newStatus = GH_STATUS.GERRIT_PUSHED;
+          if (state === 'new') {
+            newStatus = GH_STATUS.GERRIT_CREATED;
+          }
+
+          if (state === 'no_changes' && oldStatusId >= GH_STATUS.GERRIT_CREATED) {
+            newStatus = GH_STATUS.NO_CHANGES;
+          }
+
+          return maybeTagPullRequest({
+            project: project,
+            user: opts.user,
+            repo: opts.repo,
+            number: opts.number,
+            changeId: changeId,
+            commitSha: authors[0].commits[0],
+            oldStatus: oldStatusId,
+            newStatus: newStatus
+          }, callback);
+        })
       })
-    })
+    });
   });
 }
 
-lookAt({
-  user: 'couchbase',
-  repo: 'couchbase-jvm-core',
-  number: 7
-}, function(err, changeId) {
-  if (err) {
-    return console.error(err.stack);
-  }
+module.exports.lookAt = function(opts, callback) {
+  console.log('invoking lookAt', opts);
+  lookAt(opts, function(err, res) {
+    if (err) {
+      return console.error(err.stack);
+    }
+    console.log('done', res);
 
-  console.log(changeId);
-});
+    callback(err, getGhStatusTag(res));
+  })
+};
 
+module.exports.claVerify = function(opts, callback) {
+  console.log('invoking claVerify', opts);
+  getPrAuthorClaStatuses({
+    user: opts.user,
+    repo: opts.repo,
+    number: opts.number
+  }, function (err, res) {
+    if (err) {
+      return console.error(err.stack);
+    }
+    console.log('done', res);
+
+    callback(err, res);
+  });
+};
