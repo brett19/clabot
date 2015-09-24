@@ -90,6 +90,11 @@ function getChangeNumFromPr(opts, callback) {
             if (foundStatus) {
               info.status = foundStatus;
             }
+
+            // To help with debugging and what not...
+            if (matches[0] === 'reset') {
+              info.status = GH_STATUS.NEW;
+            }
           }
         }
       }
@@ -349,14 +354,14 @@ function buildChangesetFromPr(opts, callback) {
           console.log('done with', changeId);
 
           console.log('downloading gerrit revision data');
-          getGerritRevision(oldChangeId, function(err, oldRevisionId) {
+          getGerritRevision(oldChangeId, function (err, oldRevisionId) {
             if (err) return callback(err);
 
             console.log('pushing to gerrit');
-            repo.remote_push('gerrit', res.head.ref + ':refs/for/master', function(err) {
+            repo.remote_push('gerrit', res.head.ref + ':refs/for/master', function (err) {
               // ignore push errors... (since an identical push causes an error)
 
-              rimraf(targetDir, function(err) {
+              rimraf(targetDir, function (err) {
                 if (err) {
                   console.error(err.stack);
                 }
@@ -369,7 +374,7 @@ function buildChangesetFromPr(opts, callback) {
                 repo: opts.repo,
                 number: opts.number,
                 changeId: changeId
-              }, function(err) {
+              }, function (err) {
                 if (err) return callback(err);
                 console.log('done');
 
@@ -377,7 +382,7 @@ function buildChangesetFromPr(opts, callback) {
                   return callback(null, 'new', changeId);
                 }
 
-                getGerritRevision(changeId, function(err, newRevisionId) {
+                getGerritRevision(changeId, function (err, newRevisionId) {
                   if (err) return callback(err);
 
                   if (newRevisionId == oldRevisionId) {
