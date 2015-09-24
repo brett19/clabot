@@ -136,6 +136,7 @@ var jsonParser = bodyParser.json()
 
 app.all('/handle', jsonParser, function (req, res) {
   if (!req.sender || req.sender.login === config.github.user) {
+    console.log('ignore message from', req.sender)
     // ignore my own messages...
     return res.send(200);
   }
