@@ -583,7 +583,7 @@ function maybeTagPullRequest(opts, callback) {
     return callback(null, GH_STATUS.NO_CHANGES);
   }
 
-  if (opts.newStatus === GH_STATUS.TOO_MANY_COMMITS && opts.oldStatus < opts.newStatus) {
+  if (opts.newStatus === GH_STATUS.TOO_MANY_COMMITS) {
     return tagPrTooManyCommits(opts, callback);
   }
 
