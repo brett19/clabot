@@ -305,6 +305,50 @@ function getGerritRevision(changeId, callback) {
   })
 }
 
+function maybeDisableMerge(opts, callback) {
+  //disabled
+  console.log('merge status writing is disabled in bot');
+  return callback();
+
+  console.log('preparing to write merge status');
+  github.statuses.get({
+    user: opts.user,
+    repo: opts.repo,
+    sha: opts.sha
+  }, function(err, statuses) {
+    if (err) return callback(err);
+
+    var foundStatus = false;
+    for (var i = 0; i < statuses.length; ++i) {
+      if (statuses[i].context === 'cladisable') {
+        foundStatus = true;
+        break;
+      }
+    }
+
+    if (foundStatus) {
+      console.log('skipping status, already found');
+      return callback();
+    }
+
+    console.log('creating pending merge status');
+    github.statuses.create({
+      user: opts.user,
+      repo: opts.repo,
+      sha: opts.sha,
+      state: 'pending',
+      target_url: 'http://' + config.gerrit.host,
+      description: 'Merge disabled for Code Review',
+      context: 'cladisable'
+    }, function(err) {
+      if (err) return callback(err);
+      console.log('done');
+
+      callback();
+    });
+  });
+}
+
 function buildChangesetFromPr(opts, callback) {
   var project = getRepoProject(opts);
   if (!project) {
@@ -333,63 +377,71 @@ function buildChangesetFromPr(opts, callback) {
       if (err) return callback(err);
       console.log('done');
 
-      // Double check to make sure
-      if (res.commits != 1) {
-        return callback(new Error('pull requests must have 1 commit to be processed'));
-      }
+      console.log('disabling merge with status api');
+      maybeDisableMerge({
+        user: res.base.user.login,
+        repo: res.base.repo.name,
+        sha: res.head.sha
+      }, function(err) {
 
-      console.log('cloning repo from github');
-      cloneProjectFromGithub({
-        project: getRepoProject(opts),
-        clone_url: res.head.repo.clone_url,
-        ref: res.head.ref,
-        target: targetDir
-      }, function(err, repo) {
-        if (err) return callback(err);
-        console.log('done');
+        // Double check to make sure
+        if (res.commits != 1) {
+          return callback(new Error('pull requests must have 1 commit to be processed'));
+        }
 
-        console.log('update changeId using', oldChangeId);
-        updateChangeId(repo, oldChangeId, function (err, changeId) {
+        console.log('cloning repo from github');
+        cloneProjectFromGithub({
+          project: getRepoProject(opts),
+          clone_url: res.head.repo.clone_url,
+          ref: res.head.ref,
+          target: targetDir
+        }, function(err, repo) {
           if (err) return callback(err);
-          console.log('done with', changeId);
+          console.log('done');
 
-          console.log('downloading gerrit revision data');
-          getGerritRevision(oldChangeId, function (err, oldRevisionId) {
+          console.log('update changeId using', oldChangeId);
+          updateChangeId(repo, oldChangeId, function (err, changeId) {
             if (err) return callback(err);
+            console.log('done with', changeId);
 
-            console.log('pushing to gerrit');
-            repo.remote_push('gerrit', res.head.ref + ':refs/for/master', function (err) {
-              // ignore push errors... (since an identical push causes an error)
+            console.log('downloading gerrit revision data');
+            getGerritRevision(oldChangeId, function (err, oldRevisionId) {
+              if (err) return callback(err);
 
-              rimraf(targetDir, function (err) {
-                if (err) {
-                  console.error(err.stack);
-                }
-              });
+              console.log('pushing to gerrit');
+              repo.remote_push('gerrit', res.head.ref + ':refs/for/master', function (err) {
+                // ignore push errors... (since an identical push causes an error)
 
-              console.log('maybe tagging changeset');
-              maybeTagChangeset({
-                project: project,
-                user: opts.user,
-                repo: opts.repo,
-                number: opts.number,
-                changeId: changeId
-              }, function (err) {
-                if (err) return callback(err);
-                console.log('done');
+                rimraf(targetDir, function (err) {
+                  if (err) {
+                    console.error(err.stack);
+                  }
+                });
 
-                if (!oldRevisionId) {
-                  return callback(null, 'new', changeId);
-                }
-
-                getGerritRevision(changeId, function (err, newRevisionId) {
+                console.log('maybe tagging changeset');
+                maybeTagChangeset({
+                  project: project,
+                  user: opts.user,
+                  repo: opts.repo,
+                  number: opts.number,
+                  changeId: changeId
+                }, function (err) {
                   if (err) return callback(err);
+                  console.log('done');
 
-                  if (newRevisionId == oldRevisionId) {
-                    return callback(null, 'no_changes', changeId);
+                  if (!oldRevisionId) {
+                    return callback(null, 'new', changeId);
                   }
 
-                  callback(null, 'updated', changeId);
+                  getGerritRevision(changeId, function (err, newRevisionId) {
+                    if (err) return callback(err);
+
+                    if (newRevisionId == oldRevisionId) {
+                      return callback(null, 'no_changes', changeId);
+                    }
+
+                    callback(null, 'updated', changeId);
+                  });
                 });
               });
             });
