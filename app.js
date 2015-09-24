@@ -135,6 +135,11 @@ var app = express();
 var jsonParser = bodyParser.json()
 
 app.all('/handle', jsonParser, function (req, res) {
+  if (!req.sender || req.sender.login === config.github.user) {
+    // ignore my own messages...
+    return res.send(200);
+  }
+
   if (req.body && req.body.issue && req.body.issue.pull_request) {
     var owner_name = req.body.repository.owner.login;
     var repo_name = req.body.repository.name;
