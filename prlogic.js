@@ -536,7 +536,9 @@ var GH_STATUS = {
   GERRIT_PUSHED: 4,
   GERRIT_CLOSED: 5,
   TIMEOUT: 6,
-  NO_CHANGES: 100
+
+  NO_CHANGES: 100,
+  CANCELLED: 101
 };
 
 // So we can have ordered comparison
@@ -549,7 +551,8 @@ var GH_STATUS_TAGS = {
   'closed': GH_STATUS.GERRIT_CLOSED,
   'timeout': GH_STATUS.TIMEOUT,
 
-  'no_changes': GH_STATUS.NO_CHANGES
+  'no_changes': GH_STATUS.NO_CHANGES,
+  'cancelled': GH_STATUS.CANCELLED
 };
 function getGhStatusTag(code) {
   for (var i in GH_STATUS_TAGS) {
@@ -680,6 +683,10 @@ function lookAt(opts, callback) {
     number: opts.number
   }, function(err, pr) {
     if (err) return callback(err);
+
+    if (pr.state === 'closed') {
+      return callback(null, GH_STATUS.CANCELLED);
+    }
 
     var prCreatedDate = new Date(pr.created_at);
 
