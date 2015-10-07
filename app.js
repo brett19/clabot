@@ -141,16 +141,20 @@ app.all('/handle', jsonParser, function (req, res) {
     return res.send(200);
   }
 
-  if (req.body && req.body.issue && req.body.issue.pull_request) {
-    var owner_name = req.body.repository.owner.login;
-    var repo_name = req.body.repository.name;
-    var pr_num = req.body.issue.number;
-
-    prlogic.lookAt({
-      user: owner_name,
-      repo: repo_name,
-      number: pr_num
-    }, function() {})
+  if (req.body) {
+    if (req.body.pull_request) {
+      prlogic.lookAt({
+        user: req.body.repository.owner.login,
+        repo: req.body.repository.name,
+        number: req.body.pull_request.number
+      }, function () { })
+    } else if (req.body.issue && req.body.issue.pull_request) {
+      prlogic.lookAt({
+        user: req.body.repository.owner.login,
+        repo: req.body.repository.name,
+        number: req.body.issue.number
+      }, function () { })
+    }
   }
   res.send(200);
 });
