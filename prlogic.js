@@ -689,6 +689,7 @@ function lookAt(opts, callback) {
     }
 
     var prCreatedDate = new Date(pr.created_at);
+    var prUpdatedDate = new Date(pr.updated_at);
 
     getChangeNumFromPr({
       user: opts.user,
@@ -720,7 +721,7 @@ function lookAt(opts, callback) {
 
         if (closeStatus !== -1) {
           var curDate = new Date();
-          if (curDate.getTime() - prCreatedDate.getTime() >= 7*24*60*60*1000) {
+          if (curDate.getTime() - prUpdatedDate.getTime() >= 7*24*60*60*1000) {
             closeStatus = GH_STATUS.TIMEOUT;
           }
 
